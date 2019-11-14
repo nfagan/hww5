@@ -1,0 +1,13 @@
+function labels = from_gf_task_data(data_file)
+
+delay_strs = hww5.labels.prefixed_num2str( [data_file.data.delay], 'delay-' );
+trial_type_strs = { data_file.data.trial_type };
+was_correct_strs = hww5.labels.correct_str( hww5.gf_was_correct(data_file) );
+
+labels = fcat.create( ...
+  'delay', delay_strs ...
+  , 'trial-type', trial_type_strs ...
+  , 'correct', was_correct_strs ...
+);
+
+end
