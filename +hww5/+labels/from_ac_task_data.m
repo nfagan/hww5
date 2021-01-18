@@ -2,6 +2,7 @@ function labs = from_ac_task_data(trial_file)
 
 data = trial_file.data(:);
 image_types = {data.image_type};
+
 split_types = cellfun( @(x) strsplit(lower(x), '_'), image_types, 'un', 0 );
 
 labs = fcat.with( {'image-category', 'image-roi'}, numel(split_types) );
@@ -24,6 +25,14 @@ for i = 1:numel(split_types)
     end
   end
 end
+
+initiated = hww5.ac_initiated( trial_file );
+completed = hww5.ac_completed( trial_file );
+
+addsetcat( labs, 'initiated', 'initiated-false' );
+setcat( labs, 'initiated', 'initiated-true', find(initiated) );
+addsetcat( labs, 'completed', 'completed-false' );
+setcat( labs, 'completed', 'completed-true', find(completed) );
 
 end
 

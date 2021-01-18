@@ -12,6 +12,15 @@ labels = fcat.create( ...
   , 'response-direction', response_strs ...
 );
 
+initiated = hww5.ja_initiated( data_file );
+completed = hww5.ja_completed( data_file );
+
+addsetcat( labels, 'initiated', 'initiated-false' );
+setcat( labels, 'initiated', 'initiated-true', find(initiated) );
+
+addsetcat( labels, 'completed', 'completed-false' );
+setcat( labels, 'completed', 'completed-true', find(completed) );
+
 end
 
 function strs = response_direction(data)

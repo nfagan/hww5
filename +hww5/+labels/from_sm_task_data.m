@@ -16,4 +16,7 @@ initiated_strs = arrayfun( @(x) sprintf('initiated-%s', tf_str(x)), initiated, '
 labels = fcat.create( 'trial-type', trial_type, 'delay', cue_delay_strs ...
   , 'correct', was_correct_strs, 'initiated', initiated_strs );
 
+addsetcat( labels, 'completed', 'completed-false' );
+setcat( labels, 'completed', 'completed-true', find(initiated) );
+
 end

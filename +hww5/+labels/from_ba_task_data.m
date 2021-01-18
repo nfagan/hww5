@@ -21,4 +21,14 @@ setcat( labs, 'image-directness', image_directness );
 setcat( labs, 'left-image-filename', left_image_files );
 setcat( labs, 'right-image-filename', right_image_files );
 
+initiated = hww5.ba_initiated( trial_file );
+was_correct = hww5.ba_was_correct( trial_file );
+
+addsetcat( labs, 'initiated', 'initiated-false' );
+setcat( labs, 'initiated', 'initiated-true', find(initiated) );
+addsetcat( labs, 'correct', 'correct-false' );
+setcat( labs, 'correct', 'correct-true', find(was_correct) );
+addsetcat( labs, 'completed', 'completed-false' );
+setcat( labs, 'completed', 'completed-true', find(was_correct) );
+
 end
