@@ -1,6 +1,7 @@
 function outs = hww5_basic_behavior(varargin)
 
 defaults = hww5.make_defaults();
+defaults.monitor_constants = hww5.monitor_constants();
 params = hwwa.parsestruct( defaults, varargin );
 
 task_ids = cellstr( params.task_ids );
@@ -15,7 +16,7 @@ for i = 1:numel(task_ids)
   hww5.apply_inputs_outputs( runner, inputs, '', task_id, params.config );
   runner.convert_to_non_saving_with_output();
 
-  tmp_results = runner.run( @basic_behavior, task_id );
+  tmp_results = runner.run( @basic_behavior, params, task_id );
   results{i} = tmp_results(:);
 end
 
@@ -75,6 +76,45 @@ end
 
 end
 
+function [se, ee] = trial_start_stop_event_names(task_id)
+
+switch ( task_id )
+  case 'ac'
+    se = 'ac_fixation';
+    ee = 'ac_reward_on';
+  case 'ba'
+    se = 'ba_fixation';    
+    ee = 'ba_reward_on';
+  case 'gf'
+    se = 'fixation_onset';
+    ee = 'reward_on';
+  case 'ja'
+    se = 'fixation_onset';
+    ee = 'reward_on';
+  case 'sm'
+    se = 'sm_present_cue';
+    ee = 'sm_reward';
+end
+
+end
+
+function [se, ee] = get_trial_start_stop_times(task_data, se, ee)
+
+import shared_utils.struct.field_or;
+
+se = arrayfun( @(x) field_or(x.events, se, nan), task_data );
+ee = arrayfun( @(x) field_or(x.events, ee, nan), task_data );
+
+se = se(:);
+ee = ee(:);
+
+if ( ~isempty(se) )
+  last_ee = ee(end);
+  ee = [ se(2:end); last_ee ];
+end
+
+end
+
 function pupil_size = make_pupil_size(task_data_file, edf_file, sync_file, task_id)
 
 fix_acq_name = fixation_acquired_fieldname( task_id );
@@ -95,6 +135,27 @@ for i = 1:numel(fix_onset)
   t_ind = edf_file.samples.time >= start & edf_file.samples.time <= stop;
   pupil_size(i) = nanmean( edf_file.samples.pupilSize(t_ind) );
 end
+
+end
+
+function saccs = find_saccades(edf_file, stim_setup_file, monitor_constants)
+
+x = edf_file.samples.posX;
+y = edf_file.samples.posY;
+
+vres = stim_setup_file.screen_rect(4) - stim_setup_file.screen_rect(2);
+x_deg = hww5.run_px2deg( x, vres, monitor_constants );
+y_deg = hww5.run_px2deg( y, vres, monitor_constants );
+
+saccs = hwwa.run_find_saccades( x_deg(:)', y_deg(:)' );
+saccs = saccs{1};
+
+start_ind = saccs(:, 1);
+stop_ind = saccs(:, 2);
+
+start_ps = [x(start_ind), y(start_ind)];
+stop_ps = [x(stop_ind), y(stop_ind)];
+saccs = [ saccs, start_ps, stop_ps ];
 
 end
 
@@ -156,6 +217,10 @@ for i = 1:numel(image_onset)
   end
 end
 
+end
+
+function r = get_screen_rect(stim_setup_file)
+r = stim_setup_file.screen_rect;
 end
 
 function image_rois = get_sm_rois(stim_setup_file)
@@ -230,16 +295,72 @@ function events = events_to_edf(data, event_name, sync_file)
 import shared_utils.struct.field_or;
 
 image_onset_func = @(x) field_or( x.events, event_name, nan );
+events = arrayfun( image_onset_func, data );
+events = event_times_to_edf( events, sync_file );
+
+end
+
+function events = event_times_to_edf(events, sync_file)
 
 mat_ts = sync_file.mat;
 edf_ts = sync_file.edf;
-
-events = arrayfun( image_onset_func, data );
 events = round( shared_utils.sync.cinterp(events, mat_ts, edf_ts) );
 
 end
 
-function outs = basic_behavior(files, task_id)
+function binned_saccades = bin_saccades_by_trial(saccades, edf_t, se_edf, ee_edf)
+
+assert( numel(se_edf) == numel(ee_edf) );
+binned_saccades = cell( numel(se_edf), 1 );
+
+sacc_start = edf_t(saccades(:, 1));
+
+for i = 1:numel(sacc_start)
+  ss = sacc_start(i);
+  trial_ind = find( ss >= se_edf & ss < ee_edf );
+  
+  if ( ~isempty(trial_ind) )
+    assert( numel(trial_ind) == 1 );
+    binned_saccades{trial_ind}(end+1, :) = saccades(i, :);    
+  end
+end
+
+end
+
+function rois = make_rois(task_id, task_data_file, stim_setup_file)
+
+roi = struct();
+roi.screen = get_screen_rect( stim_setup_file );
+rois = repmat( {roi}, numel(task_data_file.data), 1 );
+
+if ( strcmp(task_id, 'gf') )
+  screen_rect = roi.screen;
+  gf_response = stim_setup_file.stimuli_setup.gf_response1;
+  shift = abs( gf_response.shift(1) );
+
+  for i = 1:numel(rois)
+    rois{i}.left_target = shift_rect( ...
+      hww5.center_left_rect(gf_response.size, screen_rect), -shift, 0 );
+    rois{i}.right_target = shift_rect( ...
+      hww5.center_right_rect(gf_response.size, screen_rect), shift, 0 );
+  end
+elseif ( strcmp(task_id, 'ba') )
+  left_image_roi = task_data_file.left_image_roi;
+  right_image_roi = task_data_file.right_image_roi;
+  
+  for i = 1:numel(rois)
+    rois{i}.left_image_roi = left_image_roi;
+    rois{i}.right_image_roi = right_image_roi;
+  end
+end
+
+end
+
+function r = shift_rect(r, dx, dy)
+r = r + [ dx, dy, dx, dy ];
+end
+
+function outs = basic_behavior(files, params, task_id)
 
 task_data_file = shared_utils.general.get( files, fullfile('task_data', task_id) );
 meta_file = shared_utils.general.get( files, fullfile('meta', task_id) );
@@ -253,9 +374,26 @@ rt = make_rt( task_data_file, stim_setup_file, task_id );
 [lookdur, fixdur, num_fix] = ... 
   make_look_info( task_data_file, edf_file, sync_file, stim_setup_file, task_id );
 
+% Saccade info.
+[se_name, ee_name] = trial_start_stop_event_names( task_id );
+[se, ee] = get_trial_start_stop_times( task_data_file.data, se_name, ee_name );
+
+se_edf = event_times_to_edf( se, sync_file );
+ee_edf = event_times_to_edf( ee, sync_file );
+
+saccades = find_saccades( edf_file, stim_setup_file, params.monitor_constants );
+trial_saccades = bin_saccades_by_trial( ...
+  saccades, edf_file.samples.time, se_edf, ee_edf );
+% End saccade info.
+
+num_trials = size( trial_saccades, 1 );
+rois = make_rois( task_id, task_data_file, stim_setup_file );
+
 pupil_size = make_pupil_size( task_data_file, edf_file, sync_file, task_id );
 image_onset_fix_events = ...
   make_image_onset_fix_events( task_data_file, edf_file, sync_file, task_id );
+
+file_uuid = shared_utils.general.uuid();
 
 outs = struct();
 outs.rt = rt;
@@ -264,6 +402,11 @@ outs.lookdur = lookdur;
 outs.fixdur = fixdur;
 outs.num_fix = num_fix;
 outs.labels = labels;
+outs.trial_saccades = trial_saccades;
 outs.image_onset_fix_events = image_onset_fix_events;
+outs.rois = rois;
+outs.edf_file = { edf_file };
+outs.file_id = categorical( {file_uuid} );
+outs.trial_file_ids = categorical( repmat({file_uuid}, num_trials, 1) );
 
 end
