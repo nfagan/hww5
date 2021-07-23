@@ -75,6 +75,10 @@ for i = 1:numel(task_ids)
   task_id = task_ids{i};
   
   source_dir = fullfile( session_dir_path, task_id );
+  if ( ~shared_utils.io.dexists(source_dir) )
+    continue;
+  end
+  
   dest_dir = hww5.intermediate_dir( fullfile('unified', task_id), params.config );
   
   runner = hww5.make_runner( params );

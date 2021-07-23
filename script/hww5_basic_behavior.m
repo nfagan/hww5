@@ -1,12 +1,16 @@
 function outs = hww5_basic_behavior(varargin)
 
 defaults = hww5.make_defaults();
+defaults.include_edf = true;
 params = hwwa.parsestruct( defaults, varargin );
 
 task_ids = cellstr( params.task_ids );
 results = cell( numel(task_ids), 1 );
 
-inputs = { 'task_data', 'meta', 'edf', 'edf_sync', 'stimuli_setup' };
+inputs = { 'task_data', 'meta', 'stimuli_setup' };
+if ( params.include_edf )
+  inputs = [ inputs, {'edf', 'edf_sync'} ];
+end
 
 for i = 1:numel(task_ids)
   task_id = task_ids{i};
@@ -15,7 +19,7 @@ for i = 1:numel(task_ids)
   hww5.apply_inputs_outputs( runner, inputs, '', task_id, params.config );
   runner.convert_to_non_saving_with_output();
 
-  tmp_results = runner.run( @basic_behavior, task_id );
+  tmp_results = runner.run( @basic_behavior, task_id, params );
   results{i} = tmp_results(:);
 end
 
@@ -239,23 +243,34 @@ events = round( shared_utils.sync.cinterp(events, mat_ts, edf_ts) );
 
 end
 
-function outs = basic_behavior(files, task_id)
+function outs = basic_behavior(files, task_id, params)
 
 task_data_file = shared_utils.general.get( files, fullfile('task_data', task_id) );
 meta_file = shared_utils.general.get( files, fullfile('meta', task_id) );
-edf_file = shared_utils.general.get( files, fullfile('edf', task_id) );
-sync_file = shared_utils.general.get( files, fullfile('edf_sync', task_id) );
 stim_setup_file = shared_utils.general.get( files, fullfile('stimuli_setup', task_id) );
+
+if ( params.include_edf )
+  edf_file = shared_utils.general.get( files, fullfile('edf', task_id) );
+  sync_file = shared_utils.general.get( files, fullfile('edf_sync', task_id) );
+end
 
 labels = make_labels( task_data_file, meta_file );
 rt = make_rt( task_data_file, stim_setup_file, task_id );
 
-[lookdur, fixdur, num_fix] = ... 
-  make_look_info( task_data_file, edf_file, sync_file, stim_setup_file, task_id );
+lookdur = [];
+fixdur = [];
+num_fix = [];
+pupil_size = [];
+image_onset_fix_events = [];
 
-pupil_size = make_pupil_size( task_data_file, edf_file, sync_file, task_id );
-image_onset_fix_events = ...
-  make_image_onset_fix_events( task_data_file, edf_file, sync_file, task_id );
+if ( params.include_edf )
+  [lookdur, fixdur, num_fix] = ... 
+    make_look_info( task_data_file, edf_file, sync_file, stim_setup_file, task_id );
+
+  pupil_size = make_pupil_size( task_data_file, edf_file, sync_file, task_id );
+  image_onset_fix_events = ...
+    make_image_onset_fix_events( task_data_file, edf_file, sync_file, task_id );
+end
 
 outs = struct();
 outs.rt = rt;

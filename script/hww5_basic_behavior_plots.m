@@ -11,6 +11,9 @@ defaults.gf_per_delay = true;
 defaults.ac_per_image_category = true;
 defaults.pupil_per_task_id = true;
 defaults.per_day = false;
+defaults.gf_consistent_minus_inconsistent_combs = trufls;
+defaults.gf_num_type = 'error';
+defaults.gf_per_trial_type = true;
 
 params = shared_utils.general.parsestruct( defaults, varargin );
 task_ids = cellstr( params.task_ids );
@@ -251,7 +254,14 @@ end
 
 end
 
-function initiated_subplot(data, labels, data_kind, task_id, mean_each, params)
+function initiated_subplot(data, labels, data_kind, task_id, mean_each, params, mask)
+
+if ( nargin < 7 )
+  mask = rowmask( data );
+end
+
+data = data(mask, :);
+labels = prune( labels(mask) );
 
 if ( params.normalize )
   norm_each = union( setdiff(mean_each, 'run-id'), {'subject'} );
@@ -271,7 +281,7 @@ end
 
 addtl_possible_cats = {'image-look-direction'};
 
-xcats = {};
+xcats = {'correct', 'completed'};
 gcats = { 'drug' };
 pcats = cellstr( fcats );
 pcats = union( pcats, intersect(addtl_possible_cats, mean_each) );
@@ -295,7 +305,12 @@ if ( params.save )
   anova_outs = run_anovan( data, labels', {}, factors, rowmask(data) );
   
   stat_p = fullfile( save_p, 'stats' );
-  dsp3.save_anova_outputs( anova_outs, stat_p, factors );
+  
+  try
+    dsp3.save_anova_outputs( anova_outs, stat_p, factors );
+  catch err
+    warning( err.message );
+  end
 end
 
 end
@@ -357,8 +372,10 @@ function gf_plots(labels, rt, mask, params)
 
 gf_mask = find( labels, 'gf', mask );
 
-% gf_p_correct( labels, gf_mask, params );
 gf_rt( labels, rt, gf_mask, params );
+% gf_num_correct( labels, gf_mask, params );
+
+% gf_p_correct( labels, gf_mask, params );
 % gf_initiated( labels, gf_mask, params );
 
 end
@@ -367,7 +384,7 @@ function gf_p_correct(labels, mask, params)
 
 %%
 
-const_minus_inconst_combs = trufls;
+const_minus_inconst_combs = params.gf_consistent_minus_inconsistent_combs;
 cond_combs = dsp3.numel_combvec( const_minus_inconst_combs );
 
 for i = 1:size(cond_combs, 2)
@@ -413,6 +430,58 @@ end
 
 end
 
+function gf_num_correct(labels, mask, params)
+
+corr_type = validatestring( params.gf_num_type, {'error', 'completed'}, mfilename, 'gf_num_type' );
+
+corr_each = maybe_include_trial_type( {'run-id'}, params.gf_per_trial_type );
+corr_each = maybe_include_delay( corr_each, params.gf_per_delay );
+
+switch ( corr_type )
+  case 'error'
+    is_correct = false;
+    [p_corr, p_corr_labels] = num_correct_or_incorrect( labels', corr_each, mask, is_correct );
+  case 'completed'
+    [p_corr, p_corr_labels] = num_completed( labels', corr_each, mask );
+  otherwise
+    error( 'Unhandled type "%s".', corr_type );
+end
+    
+drug_order = raw_drug_order();
+
+%%
+
+fcats = maybe_include_subject( {}, params.per_subject );
+
+xcats = maybe_include_delay( {}, params.gf_per_delay );
+gcats = {'drug'};
+pcats = [ {'task-id'}, cellstr(fcats) ];
+pcats = maybe_include_subject( pcats, params.per_subject );
+pcats = maybe_include_trial_type( pcats, params.gf_per_trial_type );
+
+pl = plotlabeled.make_common();
+pl.group_order = drug_order;
+pl.color_func = @(varargin) color_function(params.normalize, varargin{:});
+
+[figs, axs, I] = pl.figures( @bar, p_corr, p_corr_labels, fcats, xcats, gcats, pcats );
+shared_utils.plot.match_ylims( axs );
+ylabel( axs(1), sprintf('Num %s', corr_type) );
+
+if ( params.save )  
+  subdir = sprintf( 'num_%s', corr_type );
+  save_p = plot_save_path( params, 'gf', subdir );
+  save_figs( figs, save_p, p_corr_labels, [xcats, fcats, pcats], I, params.prefix );
+  
+  if ( params.gf_per_trial_type )
+    stats_each = setdiff( [xcats, gcats, pcats, fcats], {'trial-type'} );
+    ttest_outs = dsp3.ttest2( p_corr, p_corr_labels', stats_each ...
+      , 'consistent', 'inconsistent' );
+    dsp3.save_ttest2_outputs( ttest_outs, save_p, [xcats, fcats, pcats] );
+  end
+end
+
+end
+
 function gf_initiated(labels, mask, params)
 
 mean_each = { 'run-id' };
@@ -431,11 +500,12 @@ end
 
 function gf_rt(labels, rt, mask, params)
 
-mean_each = maybe_include_delay( {'run-id', 'trial-type'}, params.gf_per_delay );
+mean_each = maybe_include_trial_type( {'run-id'}, params.gf_per_trial_type );
+mean_each = maybe_include_delay( mean_each, params.gf_per_delay );
 [base_labels, I] = keepeach( labels', mean_each, mask );
 base_rt = bfw.row_nanmean( rt, I );
 
-consistent_minus_inconsistent_combs = trufls;
+consistent_minus_inconsistent_combs = params.gf_consistent_minus_inconsistent_combs;
 cond_combs = dsp3.numel_combvec( consistent_minus_inconsistent_combs );
 
 for i = 1:size(cond_combs, 2)
@@ -460,7 +530,8 @@ fcats = maybe_include_subject( {}, params.per_subject );
 
 xcats = maybe_include_delay( {}, params.gf_per_delay );
 gcats = {'drug'};
-pcats = [ {'subject', 'task-id', 'trial-type'}, cellstr(fcats) ];
+pcats = [ {'task-id', 'trial-type'}, cellstr(fcats) ];
+pcats = maybe_include_subject( pcats, params.per_subject );
 
 pl = plotlabeled.make_common();
 pl.group_order = drug_order;
@@ -473,6 +544,13 @@ ylabel( axs(1), 'Response time' );
 if ( params.save )
   save_p = plot_save_path( params, 'gf', 'response_time' );
   save_figs( figs, save_p, rt_labels, [xcats, fcats, pcats], I, params.prefix );
+  
+  if ( params.gf_per_trial_type )
+    stats_each = setdiff( [xcats, gcats, pcats, fcats], {'trial-type'} );
+    ttest_outs = dsp3.ttest2( mean_rt, rt_labels', stats_each ...
+      , 'consistent', 'inconsistent' );
+    dsp3.save_ttest2_outputs( ttest_outs, save_p, [xcats, fcats, pcats] );
+  end
 end
 
 end
@@ -483,9 +561,9 @@ function ja_plots(labels, rt, mask, params)
 
 ja_mask = find( labels, 'ja', mask );
 
+ja_rt( labels, rt, ja_mask, params );
 % ja_initiated_completed( labels, ja_mask, params );
-% ja_rt( labels, rt, ja_mask, params );
-ja_percent_correct( labels, ja_mask, params );
+% ja_percent_correct( labels, ja_mask, params );
 
 end
 
@@ -500,20 +578,25 @@ data_sets = cellfun( @(x) initiated_outs.data.(x), fnames, 'un', 0 );
 lab_sets = cellfun( @(x) initiated_outs.labels.(x), fnames, 'un', 0 );
 kinds = fnames;
 
-for i = 1:numel(data_sets)
-  initiated_subplot( data_sets{i}, lab_sets{i}, kinds{i}, 'ja', mean_each, params );
+[~, keep_ind] = ismember( {'count_completed', 'count_correct'}, fnames );
+% keep_ind = 1:numel(data_sets);
+
+for i = 1:numel(keep_ind)
+  ind = keep_ind(i);
+  init_mask = findor( lab_sets{ind}, {'completed-true', 'correct-false'} );
+  initiated_subplot( data_sets{ind}, lab_sets{ind}, kinds{ind}, 'ja', mean_each, params, init_mask );
 end
 
 %%
 
-mean_each = { 'run-id', 'image-look-direction' };
-per_direction_outs = initiated_completed_info( labels, mean_each, mask, include_correct );
-
-fname = 'prop_correct_out_of_complete';
-p_corr = per_direction_outs.data.(fname);
-p_corr_labels = per_direction_outs.labels.(fname);
-
-initiated_subplot( p_corr, p_corr_labels, fname, 'ja', mean_each, params );
+% mean_each = { 'run-id', 'image-look-direction' };
+% per_direction_outs = initiated_completed_info( labels, mean_each, mask, include_correct );
+% 
+% fname = 'prop_correct_out_of_complete';
+% p_corr = per_direction_outs.data.(fname);
+% p_corr_labels = per_direction_outs.labels.(fname);
+% 
+% initiated_subplot( p_corr, p_corr_labels, fname, 'ja', mean_each, params );
 
 end
 
@@ -846,6 +929,36 @@ end
 
 end
 
+function [data, new_labels] = count_label(labels, spec, mask, find_label)
+
+[new_labels, I] = keepeach( labels', spec, mask );
+data = nan( numel(I), 1 );
+
+for i = 1:numel(I)
+  num_corr = numel( find(labels, find_label, I{i}) );
+  data(i) = num_corr;
+end
+
+end
+
+function [data, new_labels] = num_correct_or_incorrect(labels, spec, mask, is_correct)
+
+if ( is_correct )
+  corr_lab = 'correct-true';
+else
+  corr_lab = 'correct-false';
+end
+
+[data, new_labels] = count_label( labels, spec, mask, corr_lab );
+
+end
+
+function [data, new_labels] = num_completed(labels, spec, mask)
+
+[data, new_labels] = count_label( labels, spec, mask, 'completed-true' );
+
+end
+
 function colors = color_function(is_normalized, num_colors)
 
 mat = raw_color_matrix();
@@ -940,6 +1053,12 @@ if ( tf )
 end
 end
 
+function each = maybe_include_trial_type(each, tf)
+if ( tf )
+  each = union( each, {'trial-type'} );
+end
+end
+
 function anova_outs = run_anovan(data, labels, each, factors, mask)
 
 try
@@ -965,6 +1084,8 @@ end
   counts_of( labels, each, 'initiated', mask );
 [count_completed, completed_labs] = ...
   counts_of( labels, each, 'completed', mask );
+[count_correct, correct_labs] = ...
+  counts_of( labels, each, 'correct', mask );
 
 [prop_initiated, prop_initiated_labs] = ...
   proportions_of( labels, each, 'initiated', mask );
@@ -995,6 +1116,9 @@ outs.labels.count_initiated = initiated_labs;
 
 outs.data.count_completed = count_completed;
 outs.labels.count_completed = completed_labs;
+
+outs.data.count_correct = count_correct;
+outs.labels.count_correct = correct_labs;
 
 outs.data.prop_initiated = prop_initiated;
 outs.labels.prop_initiated = prop_initiated_labs;

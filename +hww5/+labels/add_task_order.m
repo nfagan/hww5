@@ -1,11 +1,17 @@
-function labels = add_task_order(labels)
+function labels = add_task_order(labels, require5)
+
+if ( nargin < 2 )
+  require5 = true;
+end
 
 day_I = findall( labels, {'day', 'subject'} );
 
 for i = 1:numel(day_I)
   [run_I, run_C] = findall( labels, {'run-id', 'task-id'}, day_I{i} );
   % expect 5 runs per day.
-  assert( numel(run_I) == 5, 'Expected 5 runs per day; got %d', numel(run_I) );
+  if ( require5 )
+    assert( numel(run_I) == 5, 'Expected 5 runs per day; got %d', numel(run_I) );
+  end
   
   to_date = eachcell( @identifier_to_date, run_C(1, :) );
   date_nums = datenum( datestr(to_date) );
