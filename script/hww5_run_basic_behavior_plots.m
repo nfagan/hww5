@@ -1,17 +1,30 @@
+is_human = false;
+
 conf = hww5.config.load();
 
-% filter_files_func = @(x) shared_utils.io.filter_files(x, '27-Jun');
+if ( is_human )
+  conf.PATHS.data_root = '/Volumes/external/data/changlab/hww5_human';
+end
+
 filter_files_func = @identity;
+% filter_files_func = @(x) hwwa.files_containing(x, {'04-Jul-2020', '02-Sep'});
+% task_ids = hww5.task_ids;
+task_ids = { 'ba' };
 
 outs = hww5_basic_behavior( ...
     'config', conf ...
   , 'is_parallel', true ...
-  , 'task_ids', hww5.task_ids ...
+  , 'task_ids', task_ids ...
   , 'filter_files_func', filter_files_func ...
   , 'error_handler', 'error' ...
 );
 
-hww5.labels.assign_drug( outs.labels, hww5.labels.drugs_by_session() );
+if ( is_human )
+  addsetcat( outs.labels, 'drug', 'saline' );
+else
+  hww5.labels.assign_drug( outs.labels, hww5.labels.drugs_by_session() );
+end
+
 hww5.labels.add_task_order( outs.labels );
 
 %%
@@ -51,9 +64,9 @@ setcat( outs.labels, thresh_cat, sprintf('%s-true', thresh_cat), pup_inds );
 prune( outs.labels );
 %%
 
-do_save = true;
+do_save = false;
 
-per_day = true;
+per_day = false;
 
 % norm_combs = [ false ];
 % subject_combs = [ true, false ];
@@ -61,17 +74,17 @@ per_day = true;
 % pupil_crit_combs = trufls;
 % gf_per_delays = trufls;
 
-norm_combs = trufls;
-subject_combs = true;
-norm_by_task_order_combs = true;
-pupil_crit_combs = true;
+norm_combs = false;
+subject_combs = false;
+norm_by_task_order_combs = false;
+pupil_crit_combs = false;
 gf_per_delays = false;
 
 all_combs = dsp3.numel_combvec( norm_combs, subject_combs ...
   , norm_by_task_order_combs, pupil_crit_combs, gf_per_delays );
 
 % task_ids = hww5.task_ids;
-task_ids = { 'ba' };
+task_ids = { 'ac' };
 
 % task_ids = { 'sm', 'ja' };
 % task_ids = setdiff( hww5.task_ids, task_ids );
@@ -146,5 +159,3 @@ for i = 1:size(all_combs, 2)
     );
   end
 end
-
-%%

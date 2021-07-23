@@ -2,6 +2,7 @@ function results = make_unified(varargin)
 
 defaults = hww5.make_defaults();
 defaults.sessions = 'new';
+defaults.folders_are_datestr = true;
 
 params = shared_utils.general.parsestruct( defaults, varargin );
 
@@ -25,7 +26,12 @@ function sessions = find_new_sessions(params)
 
 raw_dirs = shared_utils.io.find( fullfile(hww5.dataroot(params.config), 'raw'), 'folders' );
 possible_sessions = shared_utils.io.filenames( raw_dirs );
-search_for = hww5.session_to_datestr( possible_sessions );
+
+if ( params.folders_are_datestr )
+  search_for = hww5.session_to_datestr( possible_sessions );
+else
+  search_for = possible_sessions;
+end
 
 sessions = {};
 
