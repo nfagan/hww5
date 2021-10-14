@@ -3,6 +3,7 @@ function outs = hww5_basic_behavior(varargin)
 defaults = hww5.make_defaults();
 defaults.include_edf = true;
 defaults.monitor_constants = hww5.monitor_constants();
+defaults.io_error_handler = '';
 params = hwwa.parsestruct( defaults, varargin );
 
 task_ids = cellstr( params.task_ids );
@@ -17,6 +18,10 @@ for i = 1:numel(task_ids)
   task_id = task_ids{i};
 
   runner = hww5.make_runner( params );
+  if ( ~isempty(params.io_error_handler) )
+    runner.io_error_handler = params.io_error_handler;
+  end
+  
   hww5.apply_inputs_outputs( runner, inputs, '', task_id, params.config );
   runner.convert_to_non_saving_with_output();
 
@@ -47,8 +52,11 @@ function labels = make_labels(task_data_file, meta_file)
 
 labels = hww5.labels.from_task_data( task_data_file );
 meta_labels = hww5.labels.from_meta( meta_file );
-
 join( labels, meta_labels );
+
+if ( isempty(task_data_file.data) )
+  keep( labels, [] );
+end
 
 end
 
@@ -75,7 +83,19 @@ switch ( task_id )
   case {'ba', 'gf', 'ja'}
     name = 'fixation_acquired';    
   case 'sm'
-    name = 'sm_present_image';
+%     name = 'sm_present_image';
+    name = 'sm_present_cue';
+end
+
+end
+
+function [onset_offset, offset_offset] = fixation_acquired_offsets(task_id)
+
+onset_offset = -150;
+offset_offset = 0;
+if ( strcmp(task_id, 'sm') )
+  onset_offset = 0;
+  offset_offset = 150;
 end
 
 end
@@ -122,9 +142,12 @@ end
 function pupil_size = make_pupil_size(task_data_file, edf_file, sync_file, task_id)
 
 fix_acq_name = fixation_acquired_fieldname( task_id );
+[onset_offset, offset_offset] = fixation_acquired_offsets( task_id );
 
-fix_acquired = events_to_edf( task_data_file.data, fix_acq_name, sync_file );
-fix_onset = fix_acquired - 150;
+event_onset = events_to_edf( task_data_file.data, fix_acq_name, sync_file );
+
+fix_onset = event_onset + onset_offset;
+fix_acquired = event_onset + offset_offset;
 
 pupil_size = nan( numel(fix_onset), 1 );
 
@@ -138,6 +161,10 @@ for i = 1:numel(fix_onset)
   
   t_ind = edf_file.samples.time >= start & edf_file.samples.time <= stop;
   pupil_size(i) = nanmean( edf_file.samples.pupilSize(t_ind) );
+  
+  if ( pupil_size(i) == 0 )
+    pupil_size(i) = nan;
+  end
 end
 
 end
@@ -246,10 +273,11 @@ image_rois = { roi };
 
 end
 
-function fix_evts = ...
+function [fix_evts, fix_rts] = ...
   make_image_onset_fix_events(task_data_file, edf_file, sync_file, task_id)
 
 fix_evts = cell( numel(task_data_file.data), 2 );
+fix_rts = nan( size(fix_evts) );
 
 if ( ~strcmp(task_id, 'ba') )
   return
@@ -289,6 +317,12 @@ for i = 1:numel(image_onset)
     ];
   
     fix_evts{i, j} = pos_info;
+    
+    if ( any(within_bounds) )
+      first_fix = fix_ts(find(within_bounds, 1));
+      fix_rts(i, j) = first_fix - start;
+      assert( isnan(first_fix) || isnan(start) || fix_rts(i, j) >= 0 );
+    end
   end
 end
 
@@ -375,7 +409,12 @@ if ( params.include_edf )
   sync_file = shared_utils.general.get( files, fullfile('edf_sync', task_id) );
 end
 
-labels = make_labels( task_data_file, meta_file );
+try
+  labels = make_labels( task_data_file, meta_file );
+catch err
+  throw( err );
+end
+
 rt = make_rt( task_data_file, stim_setup_file, task_id );
 
 lookdur = [];
@@ -383,14 +422,15 @@ fixdur = [];
 num_fix = [];
 pupil_size = [];
 image_onset_fix_events = [];
+image_onset_rt = [];
 
 if ( params.include_edf )
   [lookdur, fixdur, num_fix] = ... 
     make_look_info( task_data_file, edf_file, sync_file, stim_setup_file, task_id );
 
-  pupil_size = make_pupil_size( task_data_file, edf_file, sync_file, task_id );
-  image_onset_fix_events = ...
-    make_image_onset_fix_events( task_data_file, edf_file, sync_file, task_id );
+%   pupil_size = make_pupil_size( task_data_file, edf_file, sync_file, task_id );
+%   [image_onset_fix_events, image_onset_rts] = ...
+%     make_image_onset_fix_events( task_data_file, edf_file, sync_file, task_id );
 end
 
 % Saccade info.
@@ -409,10 +449,12 @@ num_trials = size( trial_saccades, 1 );
 rois = make_rois( task_id, task_data_file, stim_setup_file );
 
 pupil_size = make_pupil_size( task_data_file, edf_file, sync_file, task_id );
-image_onset_fix_events = ...
+[image_onset_fix_events, image_onset_rt] = ...
   make_image_onset_fix_events( task_data_file, edf_file, sync_file, task_id );
 
 file_uuid = shared_utils.general.uuid();
+
+assert_ispair( rt, labels );
 
 outs = struct();
 outs.rt = rt;
@@ -423,6 +465,7 @@ outs.num_fix = num_fix;
 outs.labels = labels;
 outs.trial_saccades = trial_saccades;
 outs.image_onset_fix_events = image_onset_fix_events;
+outs.image_onset_rt = image_onset_rt;
 outs.rois = rois;
 outs.edf_file = { edf_file };
 outs.file_id = categorical( {file_uuid} );

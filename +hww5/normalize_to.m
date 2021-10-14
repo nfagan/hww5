@@ -25,6 +25,7 @@ for i = 1:numel(each_I)
     curr_rows = rows( norm_labels );
     label_assign_ind = (curr_rows + 1):(curr_rows + numel(drug_ind));
     normed_lab = sprintf( '%s/%s', strjoin(drug_labs(:, j), '_'), norm_label );
+    normed_lab = repmat( {normed_lab}, numel(label_assign_ind), 1 );
     
     norm_dat{j} = data(drug_ind, clns{:}) ./ sal_data;    
     append( norm_labels, labels, drug_ind );

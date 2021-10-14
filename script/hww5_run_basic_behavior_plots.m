@@ -1,17 +1,10 @@
-is_human = false;
-
 conf = hww5.config.load();
-
-if ( is_human )
-  conf.PATHS.data_root = '/Volumes/external/data/changlab/hww5_human';
-end
+conf.PATHS.data_root = 'C:\data\hww5_nhp';
 
 filter_files_func = @identity;
-% filter_files_func = @(x) hwwa.files_containing(x, {'04-Jul-2020', '02-Sep'});
-% task_ids = hww5.task_ids;
-task_ids = { 'ba' };
+task_ids = hww5.task_ids;
 
-outs = hww5_basic_behavior( ...
+nhp_outs = hww5_basic_behavior( ...
     'config', conf ...
   , 'is_parallel', true ...
   , 'task_ids', task_ids ...
@@ -19,13 +12,9 @@ outs = hww5_basic_behavior( ...
   , 'error_handler', 'error' ...
 );
 
-if ( is_human )
-  addsetcat( outs.labels, 'drug', 'saline' );
-else
-  hww5.labels.assign_drug( outs.labels, hww5.labels.drugs_by_session() );
-end
-
-hww5.labels.add_task_order( outs.labels );
+hww5.labels.assign_drug( nhp_outs.labels, hww5.labels.drugs_by_session() );
+hww5.labels.add_task_order( nhp_outs.labels );
+addsetcat( nhp_outs.labels, 'subject-type', 'nhp' );
 
 %%
 cols = {'subject', 'day', 'drug'};

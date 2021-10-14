@@ -265,7 +265,6 @@ if ( per_direction )
 end
 if ( per_image_condition )
   if ( is_omnibus )
-    anova_factors{end+1} = im_cond;
   else
     anova_each{end+1} = im_cond;
   end
@@ -338,7 +337,7 @@ do_save = true;
 do_norm = is_norm && is_drug;
 overlay_points = false;
 per_image_condition = true;
-per_directions = trufls;
+per_directions = false;
 per_subjects = false;
 
 plt_combs = dsp3.numel_combvec( ...
@@ -403,11 +402,7 @@ if ( per_direction )
 end
 
 if ( per_image_condition )
-  if ( is_omnibus )
-    anova_factors{end+1} = im_cond;
-  else
-    anova_each{end+1} = im_cond;
-  end
+  anova_each{end+1} = im_cond;
 end
 
 if ( is_drug )

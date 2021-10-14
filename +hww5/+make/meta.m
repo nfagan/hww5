@@ -17,7 +17,11 @@ function subj = get_subject(unified_file)
 date = hww5.labels.identifier_to_date( unified_file.identifier );
 day = hww5.labels.day_from_date( date );
 
-if ( strcmp(day, '091619') )
+if ( ismember(unified_file.identifier, eb7_file_ids()) )
+  % Fix mislabeled EB7 subject.
+  subj = 'EB7';
+  
+elseif ( strcmp(day, '091619') )
   % fix mislabeled sept 16.
   subj = relabel_091619( unified_file );
 else
@@ -33,5 +37,17 @@ if ( unified_file.run_index == 1 )
 else
   subj = 'tar';
 end
+
+end
+
+function ids = eb7_file_ids()
+
+ids = [
+  {'07-Jun-2021 12_46_50.mat'}
+  {'07-Jun-2021 12_29_06.mat'}
+  {'07-Jun-2021 12_51_55.mat'}
+  {'07-Jun-2021 13_02_00.mat'}
+  {'07-Jun-2021 12_41_42.mat'}
+];
 
 end

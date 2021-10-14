@@ -1,4 +1,4 @@
-function ac_basic_bars(data, labels, varargin)
+function [dat, labs] = ac_basic_bars(data, labels, varargin)
 
 assert_ispair( data, labels );
 
@@ -20,6 +20,10 @@ defaults.plot_subdir = 'basic_behavior';
 defaults.config = hww5.config.load();
 defaults.y_label = '';
 defaults.y_lims = [];
+defaults.exclude_non_finite = false;
+defaults.per_panel_labels = false;
+
+validateattributes( data, {'double'}, {'column'}, mfilename, 'data' );
 
 params = shared_utils.general.parsestruct( defaults, varargin );
 mask = params.mask_func( labels, rowmask(labels) );
@@ -37,6 +41,12 @@ if ( params.norm )
     dat, labs, params.norm_each, params.norm_cats, params.norm_labs );
 end
 
+if ( params.exclude_non_finite )
+  finite_ind = find( isfinite(dat) );
+  dat = dat(finite_ind);
+  labs = labs(finite_ind);
+end
+
 hww5.plot.basic_bars( dat, labs, params.xcats, params.gcats, params.pcats, params.fcats ...
   , 'config', params.config ...
   , 'points_are', params.points_are ...
@@ -44,6 +54,7 @@ hww5.plot.basic_bars( dat, labs, params.xcats, params.gcats, params.pcats, param
   , 'plot_subdir', params.plot_subdir ...
   , 'y_label', params.y_label ...
   , 'y_lims', params.y_lims ...
+  , 'per_panel_labels', params.per_panel_labels ...
 );
 
 end
